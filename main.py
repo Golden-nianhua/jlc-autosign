@@ -191,15 +191,30 @@ def gold_sign_headers(access_token):
     }
 
 
+def get_gold_asset_info(headers):
+    response = requests.get(GOLD_ASSET_URL, headers=headers, timeout=REQUEST_TIMEOUT)
+    response.raise_for_status()
+    result = response.json()
+    return result.get("data") or {}
+
+
+def format_gold_message(completed, gain_num, current_total, note):
+    current_text = current_total if current_total is not None else "未知"
+    return (
+        f"金豆签到：{note}；"
+        f"是否已完成签到：{'是' if completed else '否'}；"
+        f"签到获得金豆：{gain_num}；"
+        f"当前金豆：{current_text}"
+    )
+
+
 def sign_gold_bean(access_token, account_index):
     headers = gold_sign_headers(access_token)
     masked_account = mask_account(access_token)
+    integral_voucher = None
 
     try:
-        asset_response = requests.get(GOLD_ASSET_URL, headers=headers, timeout=REQUEST_TIMEOUT)
-        asset_response.raise_for_status()
-        asset_result = asset_response.json()
-        asset_data = asset_result.get("data") or {}
+        asset_data = get_gold_asset_info(headers)
 
         customer_code = asset_data.get("customerCode") or access_token
         masked_account = mask_account(customer_code)
@@ -216,14 +231,24 @@ def sign_gold_bean(access_token, account_index):
                 return FeatureResult(
                     name="gold",
                     status="already",
-                    message=f"金豆签到：今日已签到，当前总数 {integral_voucher}",
+                    message=format_gold_message(
+                        completed=True,
+                        gain_num=0,
+                        current_total=integral_voucher,
+                        note="今日已签到",
+                    ),
                 )
 
             log(f"账号 {account_index} - ❌ [金豆 {masked_account}] 签到失败: {message}")
             return FeatureResult(
                 name="gold",
                 status="error",
-                message=f"金豆签到：失败，{message}",
+                message=format_gold_message(
+                    completed=False,
+                    gain_num=0,
+                    current_total=integral_voucher,
+                    note=f"签到失败，{message}",
+                ),
             )
 
         data = sign_result.get("data") or {}
@@ -232,12 +257,20 @@ def sign_gold_bean(access_token, account_index):
 
         if status and status > 0:
             if gain_num not in (None, 0):
-                total = integral_voucher + gain_num
+                try:
+                    total = get_gold_asset_info(headers).get("integralVoucher", integral_voucher + gain_num)
+                except RequestException:
+                    total = integral_voucher + gain_num
                 log(f"账号 {account_index} - ✅ [金豆 {masked_account}] 签到成功，获得 {gain_num} 个金豆")
                 return FeatureResult(
                     name="gold",
                     status="success",
-                    message=f"金豆签到：签到成功，获取 {gain_num} 个金豆，当前总数 {total}",
+                    message=format_gold_message(
+                        completed=True,
+                        gain_num=gain_num,
+                        current_total=total,
+                        note="签到成功",
+                    ),
                 )
 
             seventh_response = requests.get(SEVENTH_DAY_URL, headers=headers, timeout=REQUEST_TIMEOUT)
@@ -245,11 +278,20 @@ def sign_gold_bean(access_token, account_index):
             seventh_result = seventh_response.json()
 
             if seventh_result.get("success"):
+                try:
+                    total = get_gold_asset_info(headers).get("integralVoucher", integral_voucher + 8)
+                except RequestException:
+                    total = integral_voucher + 8
                 log(f"账号 {account_index} - 🎉 [金豆 {masked_account}] 第七天签到成功")
                 return FeatureResult(
                     name="gold",
                     status="success",
-                    message=f"金豆签到：第七天签到成功，当前金豆总数 {integral_voucher + 8}",
+                    message=format_gold_message(
+                        completed=True,
+                        gain_num=8,
+                        current_total=total,
+                        note="第七天签到成功",
+                    ),
                 )
 
             message = seventh_result.get("message", "未获取到额外奖励")
@@ -257,14 +299,24 @@ def sign_gold_bean(access_token, account_index):
             return FeatureResult(
                 name="gold",
                 status="error",
-                message=f"金豆签到：第七天奖励领取失败，{message}",
+                message=format_gold_message(
+                    completed=True,
+                    gain_num=0,
+                    current_total=integral_voucher,
+                    note=f"第七天奖励领取失败，{message}",
+                ),
             )
 
         log(f"账号 {account_index} - ℹ️ [金豆 {masked_account}] 今日已签到或暂无奖励")
         return FeatureResult(
             name="gold",
             status="already",
-            message=f"金豆签到：今日已签到或暂无奖励，当前总数 {integral_voucher}",
+            message=format_gold_message(
+                completed=True,
+                gain_num=0,
+                current_total=integral_voucher,
+                note="今日已签到或暂无奖励",
+            ),
         )
 
     except RequestException as exc:
@@ -272,21 +324,36 @@ def sign_gold_bean(access_token, account_index):
         return FeatureResult(
             name="gold",
             status="error",
-            message=f"金豆签到：网络请求失败，{compact_error(exc)}",
+            message=format_gold_message(
+                completed=False,
+                gain_num=0,
+                current_total=integral_voucher,
+                note=f"网络请求失败，{compact_error(exc)}",
+            ),
         )
     except KeyError as exc:
         log(f"账号 {account_index} - ❌ [金豆 {masked_account}] 数据解析失败: 缺少键 {exc}")
         return FeatureResult(
             name="gold",
             status="error",
-            message=f"金豆签到：数据解析失败，缺少键 {exc}",
+            message=format_gold_message(
+                completed=False,
+                gain_num=0,
+                current_total=integral_voucher,
+                note=f"数据解析失败，缺少键 {exc}",
+            ),
         )
     except Exception as exc:
         log(f"账号 {account_index} - ❌ [金豆 {masked_account}] 未知错误: {compact_error(exc)}")
         return FeatureResult(
             name="gold",
             status="error",
-            message=f"金豆签到：未知错误，{compact_error(exc)}",
+            message=format_gold_message(
+                completed=False,
+                gain_num=0,
+                current_total=integral_voucher,
+                note=f"未知错误，{compact_error(exc)}",
+            ),
         )
 
 
