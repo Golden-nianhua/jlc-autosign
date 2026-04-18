@@ -91,6 +91,42 @@ class FeatureResult:
     message: str
 
 
+def build_token_fallback_results(account, primary_message, fallback_reason):
+    results = [
+        FeatureResult(
+            name="oshwhub",
+            status="error",
+            message=primary_message,
+        )
+    ]
+
+    if account.access_token:
+        results.append(
+            FeatureResult(
+                name="fallback",
+                status="warning",
+                message=(
+                    f"金豆签到：检测到账号 {account.index} 的账号密码流程失败，"
+                    f"已自动回退到对应 TOKEN_LIST。原因：{fallback_reason}"
+                ),
+            )
+        )
+        results.append(sign_gold_bean(account.access_token, account.index))
+    else:
+        results.append(
+            FeatureResult(
+                name="gold",
+                status="error",
+                message=(
+                    f"金豆签到：账号 {account.index} 的账号密码流程失败，"
+                    "且未配置对应 TOKEN_LIST，无法回退执行"
+                ),
+            )
+        )
+
+    return results
+
+
 def build_accounts():
     token_list = split_env_list(TOKEN_LIST)
     send_key_list = split_env_list(SEND_KEY_LIST)
@@ -514,17 +550,12 @@ def run_browser_driven_signins(account):
         time.sleep(10 + random.randint(2, 4))
 
         if not ensure_logged_in(driver, wait, account.username, account.password, account.index):
-            results.append(
-                FeatureResult(
-                    name="oshwhub",
-                    status="error",
-                    message="立创开源平台：登录失败，请检查账号密码或滑块验证",
-                )
+            log(f"账号 {account.index} - ⚠️ 浏览器登录失败，回退到对应 TOKEN_LIST 执行金豆签到")
+            return build_token_fallback_results(
+                account,
+                "立创开源平台：账号密码登录失败，请检查账号密码或滑块验证",
+                "账号密码登录失败",
             )
-            if account.access_token:
-                log(f"账号 {account.index} - ⚠️ 浏览器登录失败，回退到 TOKEN_LIST 执行金豆签到")
-                results.append(sign_gold_bean(account.access_token, account.index))
-            return results
 
         results.append(sign_oshwhub(driver, wait, account.index, masked_account))
 
@@ -533,6 +564,16 @@ def run_browser_driven_signins(account):
             results.append(sign_gold_bean(access_token, account.index))
         elif account.access_token:
             log(f"账号 {account.index} - ⚠️ 未提取到浏览器 AccessToken，回退到 TOKEN_LIST 执行金豆签到")
+            results.append(
+                FeatureResult(
+                    name="fallback",
+                    status="warning",
+                    message=(
+                        f"金豆签到：账号 {account.index} 已完成网页登录，但未能从浏览器登录态提取 "
+                        "AccessToken，已自动回退到对应 TOKEN_LIST"
+                    ),
+                )
+            )
             results.append(sign_gold_bean(account.access_token, account.index))
         else:
             results.append(
@@ -546,13 +587,11 @@ def run_browser_driven_signins(account):
         return results
     except Exception as exc:
         log(f"账号 {account.index} - ❌ [账号密码驱动] 未知错误: {compact_error(exc)}")
-        return [
-            FeatureResult(
-                name="oshwhub",
-                status="error",
-                message=f"账号密码驱动流程：未知错误，{compact_error(exc)}",
-            )
-        ]
+        return build_token_fallback_results(
+            account,
+            f"账号密码驱动流程：未知错误，{compact_error(exc)}",
+            f"账号密码驱动流程异常，{compact_error(exc)}",
+        )
     finally:
         if driver is not None:
             driver.quit()

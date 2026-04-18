@@ -45,7 +45,7 @@
 | `TOKEN_LIST` | 金豆签到使用的 `X-JLC-AccessToken`，多个 token 用英文逗号分隔 |
 | `SEND_KEY_LIST` | Server 酱 SendKey，多个值用英文逗号分隔 |
 
-当同时提供账号密码和 `TOKEN_LIST` 时，脚本会优先尝试账号密码驱动模式；如果浏览器登录态里提取不到金豆所需的 `AccessToken`，会自动回退到 `TOKEN_LIST`。
+当同时提供账号密码和 `TOKEN_LIST` 时，脚本会优先尝试账号密码驱动模式；如果某个账号的网页登录失败，或者浏览器登录态里提取不到金豆所需的 `AccessToken`，脚本会自动回退到该账号对应位置的 `TOKEN_LIST`，并把回退原因写进通知消息。
 
 ---
 
@@ -115,7 +115,7 @@ python main.py
 3. 读取仓库 Secrets
 4. 执行 `python main.py`
 
-默认定时为每 6 小时执行一次，你可以按自己的需要修改 [.github/workflows/python-publish.yml](/D:/Code/PycharmProjects/AutoSign/LC-AutoSign/.github/workflows/python-publish.yml)。
+默认定时为每天执行 1 次，时间是北京时间 07:00。你也可以按自己的需要修改 [.github/workflows/python-publish.yml](/D:/Code/PycharmProjects/AutoSign/LC-AutoSign/.github/workflows/python-publish.yml)。
 
 ---
 
