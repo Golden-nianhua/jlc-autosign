@@ -245,7 +245,7 @@ def validate_access_token(access_token, account_index):
             return TokenCheckResult(
                 valid=False,
                 expired=True,
-                message="Token状态：已失效，请重新抓取 X-JLC-AccessToken",
+                message="Token状态：已失效，请重新抓取用于金豆签到的 X-JLC-AccessToken",
                 asset_data=data,
                 masked_account=masked_account,
             )
@@ -255,7 +255,7 @@ def validate_access_token(access_token, account_index):
             return TokenCheckResult(
                 valid=True,
                 expired=False,
-                message="Token状态：有效，可用于积分/金豆签到",
+                message="Token状态：有效，可用于金豆签到",
                 asset_data=data,
                 masked_account=masked_account,
             )
@@ -267,7 +267,7 @@ def validate_access_token(access_token, account_index):
             return TokenCheckResult(
                 valid=False,
                 expired=True,
-                message=f"Token状态：已失效或疑似失效，请重新抓取 X-JLC-AccessToken；返回信息：{message}",
+                message=f"Token状态：已失效或疑似失效，请重新抓取用于金豆签到的 X-JLC-AccessToken；返回信息：{message}",
                 asset_data=data,
                 masked_account=masked_account,
             )
@@ -301,7 +301,7 @@ def get_gold_asset_info(headers):
 def format_gold_message(completed, gain_num, current_total, note):
     current_text = current_total if current_total is not None else "未知"
     return (
-        f"积分/金豆签到：{note}；"
+        f"金豆签到：{note}；"
         f"是否已完成签到：{'是' if completed else '否'}；"
         f"签到获得金豆：{gain_num}；"
         f"当前金豆：{current_text}"
@@ -792,15 +792,6 @@ def run_browser_driven_signins(account):
 def run_token_based_signins(account):
     results = []
 
-    if account.username and account.password and not ENABLE_BROWSER_LOGIN:
-        results.append(
-            FeatureResult(
-                name="mode",
-                status="info",
-                message="账号密码登录：已保留，但当前未启用；本次直接使用 TOKEN_LIST 执行积分/金豆签到",
-            )
-        )
-
     token_check = validate_access_token(account.access_token, account.index)
     results.append(
         FeatureResult(
@@ -823,7 +814,7 @@ def run_token_based_signins(account):
                     completed=False,
                     gain_num=0,
                     current_total=None,
-                    note="未执行，Token 已失效，请重新抓取 X-JLC-AccessToken",
+                    note="未执行，Token 已失效，请重新抓取用于金豆签到的 X-JLC-AccessToken",
                 ),
             )
         )
@@ -837,7 +828,7 @@ def run_token_based_signins(account):
                 completed=False,
                 gain_num=0,
                 current_total=None,
-                note="未执行，Token 状态检测失败，请检查网络或重新抓取 Token",
+                note="未执行，Token 状态检测失败，请检查网络或重新抓取金豆签到 Token",
             ),
         )
     )
@@ -852,23 +843,11 @@ def run_account_signins(account):
         return run_browser_driven_signins(account)
 
     if account.username and account.password:
-        return [
-            FeatureResult(
-                name="mode",
-                status="skipped",
-                message="账号密码登录：已保留，但当前默认未启用；如需启用请设置 ENABLE_BROWSER_LOGIN=true",
-            )
-        ]
+        return []
 
     if account.username or account.password:
         log(f"账号 {account.index} - ⚠️ 开源平台账号密码未成对配置，且当前未使用浏览器登录")
-        return [
-            FeatureResult(
-                name="mode",
-                status="skipped",
-                message="账号密码登录：已跳过，JLC_USERNAME 与 JLC_PASSWORD 未成对配置，且当前默认仅使用 TOKEN_LIST",
-            )
-        ]
+        return []
 
     return []
 
@@ -914,9 +893,9 @@ def main():
     for i, account in enumerate(accounts, start=1):
         enabled_features = []
         if account.access_token:
-            enabled_features.append("积分/金豆签到（TOKEN_LIST）")
+            enabled_features.append("金豆签到（TOKEN_LIST）")
         elif ENABLE_BROWSER_LOGIN and account.username and account.password:
-            enabled_features.append("开源平台 + 积分/金豆签到（账号密码驱动）")
+            enabled_features.append("开源平台积分签到 + 金豆签到（账号密码驱动）")
         elif account.username and account.password:
             enabled_features.append("账号密码模式已保留但默认未启用")
 
