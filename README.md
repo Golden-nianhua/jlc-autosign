@@ -1,98 +1,129 @@
-# 📬 jlc自动签到脚本
+# 📬 JLC Auto Sign
 
-使用此 Python 脚本可以自动为多个jlc账号完成每日签到任务，并通过 [Server 酱](https://sct.ftqq.com/)推送签到结果至微信。
-
----
-
-## ✨ 项目功能
-
-* ✅ 支持 **多个账号并发签到**
-* 🎁 自动判断是否为**第七天签到**并领取8个金豆
-* 💰 获取并显示当前账号金豆数量
-* 📊 将账号按通知 `SendKey` 分组，分组推送签到结果
-* 📲 使用 **Server 酱** 实时推送签到通知到微信
+支持嘉立创金豆签到和立创开源平台签到，并通过 [Server 酱](https://sct.ftqq.com/) 推送汇总消息。
 
 ---
 
-## 🔧 使用前准备
+## ✨ 功能
 
-### 1️⃣ 获取 AccessToken
-
-1. 打开 [jlc官网](https://m.jlc.com)
-2. 登录账号，按 `F12` 打开浏览器开发者工具
-3. 在「Network」中找到任意请求
-4. 查看请求头 Header 中的 `X-JLC-AccessToken`，复制其值
-5. 多个账号用英文逗号 `,` 分隔
-6. 建议使用手机抓包，请勿手动退出账号，否则会导致token失效
-
-### 2️⃣ 获取 SendKey（Server 酱）
-
-1. 打开 [Server 酱官网](https://sct.ftqq.com/)
-2. 注册并登录后，进入「发送通道」页面
-3. 创建通知通道并获取 `SendKey`
-4. 多个账号用英文逗号 `,` 分隔，**数量需与 TOKEN\_LIST 一一对应**
+- 支持多账号签到
+- 支持立创开源平台签到
+- 支持金豆签到
+- 支持账号密码驱动模式，无需手动抓 `AccessToken`
+- 保留 `TOKEN_LIST` 兼容模式，可作为金豆签到回退方案
+- 按 `SEND_KEY_LIST` 分组推送 Server 酱通知
 
 ---
 
-## ⚙️ 配置说明
+## 🔧 推荐配置
 
-### GitHub Actions 配置
+推荐直接使用账号密码驱动模式：
 
-1. Fork 本仓库
-2. 进入仓库 Settings → Secrets → Actions
-3. 添加以下 Secrets：
+| 变量名 | 说明 |
+| --- | --- |
+| `JLC_USERNAME` | 嘉立创登录账号，多个账号用英文逗号分隔 |
+| `JLC_PASSWORD` | 嘉立创登录密码，多个密码用英文逗号分隔，顺序要和账号一致 |
+| `SEND_KEY_LIST` | Server 酱 SendKey，多个值用英文逗号分隔，按账号索引匹配 |
 
-| 变量名             | 示例值           | 说明               |
-| --------------- | ------------- | ---------------- |
-| TOKEN\_LIST     | token1,token2 | 多个 token 用英文逗号分隔 |
-| SEND\_KEY\_LIST | key1,key2     | 与 token 一一对应     |
-### token 用英文逗号分隔！不需要加单引号双引号。多个账号之间用逗号隔开就好了。有几个账号，就贴几个通知KEY（可以相同，也可以不同。不同的没测试过不一定能用）。不然跑不起来
-### 本地运行配置
+脚本会对每个账号执行以下流程：
 
-```ini
-TOKEN_LIST这样填：your_token1,your_token2
-SEND_KEY_LIST这样填：your_key1,your_key2
-```
----
-
-## 📋 执行流程
-
-1. 自动签到获取金豆
-2. 检查是否为第七天签到
-3. 查询当前金豆余额并推送
+1. 登录立创账号
+2. 执行立创开源平台签到
+3. 复用同一登录态进入 `m.jlc.com`
+4. 自动提取登录态里的 `AccessToken`
+5. 执行金豆签到
+6. 把开源平台和金豆签到结果一起推送到 Server 酱
 
 ---
 
-## ⏱️ GitHub Actions 定时运行
+## 🧩 兼容配置
 
-### 创建 `.github/workflows/jlc-signin.yml`
+如果你暂时只想跑金豆签到，也可以继续使用旧版配置：
 
-```yaml
-name: JLC Auto Sign
+| 变量名 | 说明 |
+| --- | --- |
+| `TOKEN_LIST` | 金豆签到使用的 `X-JLC-AccessToken`，多个 token 用英文逗号分隔 |
+| `SEND_KEY_LIST` | Server 酱 SendKey，多个值用英文逗号分隔 |
 
-on:
-  schedule:
-    - cron: '0 16,22,4,10 * * *'  # 每 6 小时执行一次，UTC + 8 北京时间
+当同时提供账号密码和 `TOKEN_LIST` 时，脚本会优先尝试账号密码驱动模式；如果浏览器登录态里提取不到金豆所需的 `AccessToken`，会自动回退到 `TOKEN_LIST`。
 
-  workflow_dispatch:
+---
 
-jobs:
-  sign:
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v3
+## ⚙️ GitHub Actions Secrets
 
-    - name: Run Sign Script
-      env:
-        TOKEN_LIST: ${{ secrets.TOKEN_LIST }}
-        SEND_KEY_LIST: ${{ secrets.SEND_KEY_LIST }}
-      run: |
-        python main.py
+进入你自己的仓库：
+
+`Settings -> Secrets and variables -> Actions`
+
+推荐至少配置下面三个 Secret：
+
+| 名称 | 示例 |
+| --- | --- |
+| `JLC_USERNAME` | `user1@example.com,user2@example.com` |
+| `JLC_PASSWORD` | `password1,password2` |
+| `SEND_KEY_LIST` | `SCTxxxx,SCTyyyy` |
+
+可选兼容 Secret：
+
+| 名称 | 说明 |
+| --- | --- |
+| `TOKEN_LIST` | 金豆签到回退用 token 列表 |
+
+注意：
+
+- 多个账号之间都使用英文逗号 `,` 分隔。
+- `JLC_USERNAME`、`JLC_PASSWORD`、`SEND_KEY_LIST` 最好按同样顺序一一对应。
+- 如果某个账号没有对应的 `SendKey`，脚本仍会执行签到，但不会推送它的通知。
+
+---
+
+## 💻 本地运行
+
+### 1. 安装依赖
+
+```bash
+pip install -r requirements.txt
 ```
 
+### 2. 配置环境变量
+
+账号密码驱动模式：
+
+```bash
+JLC_USERNAME=user1@example.com,user2@example.com
+JLC_PASSWORD=password1,password2
+SEND_KEY_LIST=SCTxxxx,SCTyyyy
+python main.py
+```
+
+仅金豆兼容模式：
+
+```bash
+TOKEN_LIST=token1,token2
+SEND_KEY_LIST=SCTxxxx,SCTyyyy
+python main.py
+```
+
 ---
 
-## 📄 License
+## 🤖 GitHub Actions
 
-本项目遵循 MIT License，欢迎自由使用和修改。
+仓库已经自带 workflow，会自动：
+
+1. 安装 Python 3.12
+2. 安装 `requests` 和 `selenium`
+3. 读取仓库 Secrets
+4. 执行 `python main.py`
+
+默认定时为每 6 小时执行一次，你可以按自己的需要修改 [.github/workflows/python-publish.yml](/D:/Code/PycharmProjects/AutoSign/LC-AutoSign/.github/workflows/python-publish.yml)。
+
+---
+
+## 📬 通知说明
+
+每个账号的通知会同时包含：
+
+- 立创开源平台签到结果
+- 金豆签到结果
+
+如果多个账号使用同一个 `SendKey`，脚本会自动合并成一条汇总消息。

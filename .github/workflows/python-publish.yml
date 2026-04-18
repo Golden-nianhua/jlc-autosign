@@ -10,12 +10,26 @@ jobs:
   sign:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout
-      uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Run Sign Script
-      env:
-        TOKEN_LIST: ${{ secrets.TOKEN_LIST }}
-        SEND_KEY_LIST: ${{ secrets.SEND_KEY_LIST }}
-      run: |
-        python main.py
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run Sign Script
+        env:
+          TOKEN_LIST: ${{ secrets.TOKEN_LIST }}
+          SEND_KEY_LIST: ${{ secrets.SEND_KEY_LIST }}
+          JLC_USERNAME: ${{ secrets.JLC_USERNAME }}
+          JLC_PASSWORD: ${{ secrets.JLC_PASSWORD }}
+          PYTHONUTF8: '1'
+          PYTHONUNBUFFERED: '1'
+        run: |
+          python main.py
