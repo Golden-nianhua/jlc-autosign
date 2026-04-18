@@ -33,6 +33,12 @@ TOKEN_LIST = os.getenv("TOKEN_LIST", "")
 SEND_KEY_LIST = os.getenv("SEND_KEY_LIST", "")
 JLC_USERNAME = os.getenv("JLC_USERNAME", "")
 JLC_PASSWORD = os.getenv("JLC_PASSWORD", "")
+ENABLE_BROWSER_LOGIN = os.getenv("ENABLE_BROWSER_LOGIN", "false").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
 REQUEST_TIMEOUT = 15
 GOLD_SIGN_URL = "https://m.jlc.com/api/activity/sign/signIn?source=3"
@@ -89,6 +95,15 @@ class FeatureResult:
     name: str
     status: str
     message: str
+
+
+@dataclass
+class TokenCheckResult:
+    valid: bool
+    expired: bool
+    message: str
+    asset_data: dict
+    masked_account: str
 
 
 def build_token_fallback_results(account, primary_message, fallback_reason):
@@ -191,6 +206,91 @@ def gold_sign_headers(access_token):
     }
 
 
+def is_token_expired_message(message):
+    text = (message or "").lower()
+    keywords = [
+        "token",
+        "登录",
+        "失效",
+        "过期",
+        "invalid",
+        "expired",
+        "unauthorized",
+        "forbidden",
+        "请先登录",
+    ]
+    return any(keyword in text for keyword in keywords)
+
+
+def validate_access_token(access_token, account_index):
+    headers = gold_sign_headers(access_token)
+    masked_account = mask_account(access_token)
+
+    try:
+        response = requests.get(GOLD_ASSET_URL, headers=headers, timeout=REQUEST_TIMEOUT)
+        status_code = response.status_code
+
+        try:
+            result = response.json()
+        except ValueError:
+            result = {}
+
+        data = result.get("data") or {}
+        customer_code = data.get("customerCode")
+        if customer_code:
+            masked_account = mask_account(customer_code)
+
+        if status_code in (401, 403):
+            log(f"账号 {account_index} - ❌ [Token {masked_account}] 已失效，HTTP {status_code}")
+            return TokenCheckResult(
+                valid=False,
+                expired=True,
+                message="Token状态：已失效，请重新抓取 X-JLC-AccessToken",
+                asset_data=data,
+                masked_account=masked_account,
+            )
+
+        if customer_code or "integralVoucher" in data:
+            log(f"账号 {account_index} - ✅ [Token {masked_account}] 状态正常")
+            return TokenCheckResult(
+                valid=True,
+                expired=False,
+                message="Token状态：有效，可用于积分/金豆签到",
+                asset_data=data,
+                masked_account=masked_account,
+            )
+
+        message = result.get("message") or result.get("msg") or f"HTTP {status_code}"
+        expired = is_token_expired_message(message)
+        if expired:
+            log(f"账号 {account_index} - ❌ [Token {masked_account}] 疑似失效: {message}")
+            return TokenCheckResult(
+                valid=False,
+                expired=True,
+                message=f"Token状态：已失效或疑似失效，请重新抓取 X-JLC-AccessToken；返回信息：{message}",
+                asset_data=data,
+                masked_account=masked_account,
+            )
+
+        log(f"账号 {account_index} - ⚠️ [Token {masked_account}] 状态检测失败: {message}")
+        return TokenCheckResult(
+            valid=False,
+            expired=False,
+            message=f"Token状态：检测失败，返回信息：{message}",
+            asset_data=data,
+            masked_account=masked_account,
+        )
+    except RequestException as exc:
+        log(f"账号 {account_index} - ⚠️ [Token {masked_account}] 状态检测请求失败: {compact_error(exc)}")
+        return TokenCheckResult(
+            valid=False,
+            expired=False,
+            message=f"Token状态：检测失败，网络请求异常：{compact_error(exc)}",
+            asset_data={},
+            masked_account=masked_account,
+        )
+
+
 def get_gold_asset_info(headers):
     response = requests.get(GOLD_ASSET_URL, headers=headers, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()
@@ -201,20 +301,20 @@ def get_gold_asset_info(headers):
 def format_gold_message(completed, gain_num, current_total, note):
     current_text = current_total if current_total is not None else "未知"
     return (
-        f"金豆签到：{note}；"
+        f"积分/金豆签到：{note}；"
         f"是否已完成签到：{'是' if completed else '否'}；"
         f"签到获得金豆：{gain_num}；"
         f"当前金豆：{current_text}"
     )
 
 
-def sign_gold_bean(access_token, account_index):
+def sign_gold_bean(access_token, account_index, initial_asset_data=None):
     headers = gold_sign_headers(access_token)
     masked_account = mask_account(access_token)
     integral_voucher = None
 
     try:
-        asset_data = get_gold_asset_info(headers)
+        asset_data = initial_asset_data or get_gold_asset_info(headers)
 
         customer_code = asset_data.get("customerCode") or access_token
         masked_account = mask_account(customer_code)
@@ -628,7 +728,29 @@ def run_browser_driven_signins(account):
 
         access_token = get_browser_access_token(driver, wait, account.index)
         if access_token:
-            results.append(sign_gold_bean(access_token, account.index))
+            token_check = validate_access_token(access_token, account.index)
+            results.append(
+                FeatureResult(
+                    name="token",
+                    status="success" if token_check.valid else "error" if token_check.expired else "warning",
+                    message=token_check.message,
+                )
+            )
+            if token_check.valid:
+                results.append(sign_gold_bean(access_token, account.index, initial_asset_data=token_check.asset_data))
+            else:
+                results.append(
+                    FeatureResult(
+                        name="gold",
+                        status="error",
+                        message=format_gold_message(
+                            completed=False,
+                            gain_num=0,
+                            current_total=None,
+                            note="未执行，浏览器提取到的 Token 不可用",
+                        ),
+                    )
+                )
         elif account.access_token:
             log(f"账号 {account.index} - ⚠️ 未提取到浏览器 AccessToken，回退到 TOKEN_LIST 执行金豆签到")
             results.append(
@@ -667,24 +789,86 @@ def run_browser_driven_signins(account):
             shutil.rmtree(user_data_dir, ignore_errors=True)
 
 
-def run_account_signins(account):
-    if account.username and account.password:
-        return run_browser_driven_signins(account)
-    elif account.username or account.password:
-        log(f"账号 {account.index} - ⚠️ 开源平台账号密码未成对配置，跳过开源平台签到")
-        results = [
+def run_token_based_signins(account):
+    results = []
+
+    if account.username and account.password and not ENABLE_BROWSER_LOGIN:
+        results.append(
             FeatureResult(
-                name="oshwhub",
-                status="skipped",
-                message="立创开源平台：已跳过，JLC_USERNAME 与 JLC_PASSWORD 未成对配置",
+                name="mode",
+                status="info",
+                message="账号密码登录：已保留，但当前未启用；本次直接使用 TOKEN_LIST 执行积分/金豆签到",
             )
-        ]
-        if account.access_token:
-            results.append(sign_gold_bean(account.access_token, account.index))
+        )
+
+    token_check = validate_access_token(account.access_token, account.index)
+    results.append(
+        FeatureResult(
+            name="token",
+            status="success" if token_check.valid else "error" if token_check.expired else "warning",
+            message=token_check.message,
+        )
+    )
+
+    if token_check.valid:
+        results.append(sign_gold_bean(account.access_token, account.index, initial_asset_data=token_check.asset_data))
         return results
 
+    if token_check.expired:
+        results.append(
+            FeatureResult(
+                name="gold",
+                status="error",
+                message=format_gold_message(
+                    completed=False,
+                    gain_num=0,
+                    current_total=None,
+                    note="未执行，Token 已失效，请重新抓取 X-JLC-AccessToken",
+                ),
+            )
+        )
+        return results
+
+    results.append(
+        FeatureResult(
+            name="gold",
+            status="error",
+            message=format_gold_message(
+                completed=False,
+                gain_num=0,
+                current_total=None,
+                note="未执行，Token 状态检测失败，请检查网络或重新抓取 Token",
+            ),
+        )
+    )
+    return results
+
+
+def run_account_signins(account):
     if account.access_token:
-        return [sign_gold_bean(account.access_token, account.index)]
+        return run_token_based_signins(account)
+
+    if ENABLE_BROWSER_LOGIN and account.username and account.password:
+        return run_browser_driven_signins(account)
+
+    if account.username and account.password:
+        return [
+            FeatureResult(
+                name="mode",
+                status="skipped",
+                message="账号密码登录：已保留，但当前默认未启用；如需启用请设置 ENABLE_BROWSER_LOGIN=true",
+            )
+        ]
+
+    if account.username or account.password:
+        log(f"账号 {account.index} - ⚠️ 开源平台账号密码未成对配置，且当前未使用浏览器登录")
+        return [
+            FeatureResult(
+                name="mode",
+                status="skipped",
+                message="账号密码登录：已跳过，JLC_USERNAME 与 JLC_PASSWORD 未成对配置，且当前默认仅使用 TOKEN_LIST",
+            )
+        ]
 
     return []
 
@@ -720,7 +904,7 @@ def main():
     accounts = build_accounts()
 
     if not accounts:
-        log("❌ 请至少配置 TOKEN_LIST，或成对配置 JLC_USERNAME / JLC_PASSWORD")
+        log("❌ 请至少配置 TOKEN_LIST。账号密码方式虽然保留，但当前默认未启用")
         return
 
     log(f"🔧 共发现 {len(accounts)} 个账号索引需要处理")
@@ -729,10 +913,12 @@ def main():
 
     for i, account in enumerate(accounts, start=1):
         enabled_features = []
-        if account.username and account.password:
-            enabled_features.append("开源平台 + 金豆签到（账号密码驱动）")
-        elif account.access_token:
-            enabled_features.append("金豆签到（TOKEN_LIST）")
+        if account.access_token:
+            enabled_features.append("积分/金豆签到（TOKEN_LIST）")
+        elif ENABLE_BROWSER_LOGIN and account.username and account.password:
+            enabled_features.append("开源平台 + 积分/金豆签到（账号密码驱动）")
+        elif account.username and account.password:
+            enabled_features.append("账号密码模式已保留但默认未启用")
 
         feature_text = " + ".join(enabled_features) if enabled_features else "无可用签到功能"
         log(f"🚀 开始处理第 {i}/{len(accounts)} 个账号，功能: {feature_text}")

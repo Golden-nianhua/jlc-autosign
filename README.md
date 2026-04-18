@@ -1,51 +1,49 @@
 # 📬 JLC Auto Sign
 
-支持嘉立创金豆签到和立创开源平台签到，并通过 [Server 酱](https://sct.ftqq.com/) 推送汇总消息。
+支持通过 `X-JLC-AccessToken` 执行嘉立创积分/金豆签到，并通过 [Server 酱](https://sct.ftqq.com/) 推送汇总消息。
 
 ---
 
 ## ✨ 功能
 
 - 支持多账号签到
-- 支持立创开源平台签到
-- 支持金豆签到
-- 支持账号密码驱动模式，无需手动抓 `AccessToken`
-- 保留 `TOKEN_LIST` 兼容模式，可作为金豆签到回退方案
+- 支持积分/金豆签到
+- 默认直接使用 `TOKEN_LIST`
+- 内置 Token 状态检测，可提示 token 是否失效
+- 保留账号密码驱动模式代码，但默认不启用
 - 按 `SEND_KEY_LIST` 分组推送 Server 酱通知
 
 ---
 
 ## 🔧 推荐配置
 
-推荐直接使用账号密码驱动模式：
+推荐直接使用 token 模式：
+
+| 变量名 | 说明 |
+| --- | --- |
+| `TOKEN_LIST` | 嘉立创 `X-JLC-AccessToken`，多个 token 用英文逗号分隔 |
+| `SEND_KEY_LIST` | Server 酱 SendKey，多个值用英文逗号分隔，按账号索引匹配 |
+
+脚本会对每个账号执行以下流程：
+
+1. 检测 token 是否有效
+2. 如果 token 有效，执行积分/金豆签到
+3. 查询当前金豆数量
+4. 把 token 状态和签到结果一起推送到 Server 酱
+
+---
+
+## 🧩 可选保留配置
+
+账号密码驱动模式代码仍然保留，但当前默认不启用：
 
 | 变量名 | 说明 |
 | --- | --- |
 | `JLC_USERNAME` | 嘉立创登录账号，多个账号用英文逗号分隔 |
 | `JLC_PASSWORD` | 嘉立创登录密码，多个密码用英文逗号分隔，顺序要和账号一致 |
-| `SEND_KEY_LIST` | Server 酱 SendKey，多个值用英文逗号分隔，按账号索引匹配 |
+| `ENABLE_BROWSER_LOGIN` | 设为 `true` 时才启用账号密码驱动模式 |
 
-脚本会对每个账号执行以下流程：
-
-1. 登录立创账号
-2. 执行立创开源平台签到
-3. 复用同一登录态进入 `m.jlc.com`
-4. 自动提取登录态里的 `AccessToken`
-5. 执行金豆签到
-6. 把开源平台和金豆签到结果一起推送到 Server 酱
-
----
-
-## 🧩 兼容配置
-
-如果你暂时只想跑金豆签到，也可以继续使用旧版配置：
-
-| 变量名 | 说明 |
-| --- | --- |
-| `TOKEN_LIST` | 金豆签到使用的 `X-JLC-AccessToken`，多个 token 用英文逗号分隔 |
-| `SEND_KEY_LIST` | Server 酱 SendKey，多个值用英文逗号分隔 |
-
-当同时提供账号密码和 `TOKEN_LIST` 时，脚本会优先尝试账号密码驱动模式；如果某个账号的网页登录失败，或者浏览器登录态里提取不到金豆所需的 `AccessToken`，脚本会自动回退到该账号对应位置的 `TOKEN_LIST`，并把回退原因写进通知消息。
+如果同时提供了账号密码和 `TOKEN_LIST`，而 `ENABLE_BROWSER_LOGIN` 没有设为 `true`，脚本会忽略账号密码，直接使用 `TOKEN_LIST`。
 
 ---
 
@@ -55,24 +53,25 @@
 
 `Settings -> Secrets and variables -> Actions`
 
-推荐至少配置下面三个 Secret：
+推荐至少配置下面两个 Secret：
 
 | 名称 | 示例 |
 | --- | --- |
-| `JLC_USERNAME` | `user1@example.com,user2@example.com` |
-| `JLC_PASSWORD` | `password1,password2` |
+| `TOKEN_LIST` | `token1,token2` |
 | `SEND_KEY_LIST` | `SCTxxxx,SCTyyyy` |
 
-可选兼容 Secret：
+可选保留 Secret：
 
 | 名称 | 说明 |
 | --- | --- |
-| `TOKEN_LIST` | 金豆签到回退用 token 列表 |
+| `JLC_USERNAME` | 账号密码登录模式使用 |
+| `JLC_PASSWORD` | 账号密码登录模式使用 |
+| `ENABLE_BROWSER_LOGIN` | 设为 `true` 才启用账号密码模式 |
 
 注意：
 
 - 多个账号之间都使用英文逗号 `,` 分隔。
-- `JLC_USERNAME`、`JLC_PASSWORD`、`SEND_KEY_LIST` 最好按同样顺序一一对应。
+- `TOKEN_LIST` 与 `SEND_KEY_LIST` 最好按同样顺序一一对应。
 - 如果某个账号没有对应的 `SendKey`，脚本仍会执行签到，但不会推送它的通知。
 
 ---
@@ -87,19 +86,20 @@ pip install -r requirements.txt
 
 ### 2. 配置环境变量
 
-账号密码驱动模式：
+默认 token 模式：
 
 ```bash
-JLC_USERNAME=user1@example.com,user2@example.com
-JLC_PASSWORD=password1,password2
+TOKEN_LIST=token1,token2
 SEND_KEY_LIST=SCTxxxx,SCTyyyy
 python main.py
 ```
 
-仅金豆兼容模式：
+如果你以后想重新启用账号密码驱动模式：
 
 ```bash
-TOKEN_LIST=token1,token2
+JLC_USERNAME=user1@example.com,user2@example.com
+JLC_PASSWORD=password1,password2
+ENABLE_BROWSER_LOGIN=true
 SEND_KEY_LIST=SCTxxxx,SCTyyyy
 python main.py
 ```
@@ -121,9 +121,10 @@ python main.py
 
 ## 📬 通知说明
 
-每个账号的通知会同时包含：
+每个账号的通知会包含：
 
-- 立创开源平台签到结果
-- 金豆签到结果
+- Token 状态检测结果
+- 积分/金豆签到结果
+- 是否完成签到、获得多少金豆、当前有多少金豆
 
 如果多个账号使用同一个 `SendKey`，脚本会自动合并成一条汇总消息。

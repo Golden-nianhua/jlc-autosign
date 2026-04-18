@@ -29,6 +29,7 @@ jobs:
           SEND_KEY_LIST: ${{ secrets.SEND_KEY_LIST }}
           JLC_USERNAME: ${{ secrets.JLC_USERNAME }}
           JLC_PASSWORD: ${{ secrets.JLC_PASSWORD }}
+          ENABLE_BROWSER_LOGIN: 'false'
           PYTHONUTF8: '1'
           PYTHONUNBUFFERED: '1'
         run: |
