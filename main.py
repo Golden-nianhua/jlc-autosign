@@ -41,6 +41,7 @@ ENABLE_BROWSER_LOGIN = os.getenv("ENABLE_BROWSER_LOGIN", "false").strip().lower(
 }
 
 REQUEST_TIMEOUT = 15
+MAX_SIGNIN_RETRIES = 3
 GOLD_SIGN_URL = "https://m.jlc.com/api/activity/sign/signIn?source=3"
 GOLD_ASSET_URL = "https://m.jlc.com/api/appPlatform/center/assets/selectPersonalAssetsInfo"
 SEVENTH_DAY_URL = "https://m.jlc.com/api/activity/sign/receiveVoucher"
@@ -852,6 +853,40 @@ def run_account_signins(account):
     return []
 
 
+def run_account_with_retries(account):
+    results = run_account_signins(account)
+    if not results or not has_signin_failure(results):
+        return results
+
+    for retry_count in range(1, MAX_SIGNIN_RETRIES + 1):
+        wait_time = random.randint(8, 15)
+        log(f"账号 {account.index} - ⚠️ 本次签到失败，等待 {wait_time} 秒后进行第 {retry_count}/{MAX_SIGNIN_RETRIES} 次重试")
+        time.sleep(wait_time)
+
+        results = run_account_signins(account)
+        if not results or not has_signin_failure(results):
+            if results:
+                results.append(
+                    FeatureResult(
+                        name="retry",
+                        status="success",
+                        message=f"重试状态：第 {retry_count}/{MAX_SIGNIN_RETRIES} 次重试后签到成功",
+                    )
+                )
+            return results
+
+    if results:
+        results.append(
+            FeatureResult(
+                name="retry",
+                status="error",
+                message=f"重试状态：已重试 {MAX_SIGNIN_RETRIES} 次，最终仍失败",
+            )
+        )
+
+    return results
+
+
 def format_account_report(account, results):
     identity = mask_account(account.username or account.access_token or f"账号{account.index}")
     lines = [f"### 账号 {account.index}（{identity}）"]
@@ -907,7 +942,7 @@ def main():
         feature_text = " + ".join(enabled_features) if enabled_features else "无可用签到功能"
         log(f"🚀 开始处理第 {i}/{len(accounts)} 个账号，功能: {feature_text}")
 
-        results = run_account_signins(account)
+        results = run_account_with_retries(account)
         if not results:
             log(f"账号 {account.index} - ⚠️ 没有可执行的签到配置")
             continue
