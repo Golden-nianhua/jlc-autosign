@@ -860,15 +860,20 @@ def format_account_report(account, results):
     return "\n".join(lines)
 
 
+def has_signin_failure(results):
+    return any(result.status == "error" for result in results)
+
+
 def send_notifications(group_results):
     if not group_results:
         log("ℹ️ 没有可推送的 SendKey 或通知内容，跳过消息推送")
         return
 
     for send_key, reports in group_results.items():
-        content = "\n\n".join(reports)
-        log(f"📤 准备向 SendKey {send_key[:5]}... 推送 {len(reports)} 条账号汇总")
-        response = send_msg_by_server(send_key, "嘉立创签到汇总", content)
+        content = "\n\n".join(report["content"] for report in reports)
+        title = "jlc签到失败" if any(report["has_failure"] for report in reports) else "嘉立创签到汇总"
+        log(f"📤 准备向 SendKey {send_key[:5]}... 推送 {len(reports)} 条账号汇总，标题: {title}")
+        response = send_msg_by_server(send_key, title, content)
 
         if response and response.get("code") == 0:
             push_id = response.get("data", {}).get("pushid", "")
@@ -911,7 +916,12 @@ def main():
         log(f"账号 {account.index} - 汇总结果:\n{report}")
 
         if account.send_key:
-            group_results[account.send_key].append(report)
+            group_results[account.send_key].append(
+                {
+                    "content": report,
+                    "has_failure": has_signin_failure(results),
+                }
+            )
         else:
             log(f"账号 {account.index} - ⚠️ 未配置 SendKey，本次不会推送通知")
 
