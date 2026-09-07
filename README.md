@@ -58,8 +58,7 @@ XMLHttpRequest.prototype.setRequestHeader = function (name, value) {
 ## 本地运行
 
 ```powershell
-uv venv --python 3.13 .venv
-uv pip install --python .venv/Scripts/python.exe -r requirements.txt
+uv sync --frozen
 .\.venv\Scripts\python.exe main.py
 ```
 
@@ -92,10 +91,10 @@ uv pip install --python .venv/Scripts/python.exe -r requirements.txt
 将项目复制到服务器后，在项目目录创建 Linux 的 `uv` 环境和 `config.py`，再运行：
 
 ```bash
-uv venv --python 3.13 .venv
-uv pip install --python .venv/bin/python -r requirements.txt
 bash install_linux_timer.sh
 ```
+
+安装脚本会执行 `uv sync --frozen`，根据提交的 `uv.lock` 创建或同步 `.venv`。
 
 定时器日志通过以下命令查看：
 
