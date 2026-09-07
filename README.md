@@ -1,149 +1,110 @@
-# 📬 JLC Auto Sign
+# JLC Auto Sign
 
-支持通过 `X-JLC-AccessToken` 执行嘉立创金豆签到，并通过 [Server 酱](https://sct.ftqq.com/) 推送汇总消息。
+使用 `X-JLC-AccessToken` 自动完成嘉立创金豆签到。签到结果始终输出到运行日志，也可以选择通过 [Server 酱](https://sct.ftqq.com/) 推送到微信。
 
----
+## 功能
 
-## ✨ 功能
+- 支持多个嘉立创账号的金豆签到
+- 签到前检测 Token 是否有效
+- 失败后最多额外重试 3 次
+- 所有账号的签到结果都会输出到运行日志
+- 使用一个可选的 Server 酱 `SEND_KEY` 汇总推送
+- 任一账号最终失败时，通知标题为 `jlc签到失败`
 
-- 支持多账号签到
-- 支持金豆签到
-- 默认直接使用 `TOKEN_LIST`
-- 内置 Token 状态检测，可提示 token 是否失效
-- 签到失败时会自动重试，每个账号最多重试 3 次
-- 保留账号密码驱动模式代码，但默认不启用
-- 按 `SEND_KEY_LIST` 分组推送 Server 酱通知
-- 保留立创开源平台积分签到逻辑，但默认不启用
+## GitHub Actions 配置
 
----
+本地运行时，直接编辑根目录的 `config.py`：
 
-## 🔧 推荐配置
-
-推荐直接使用 token 模式：
-
-| 变量名 | 说明 |
+| 字段 | 说明 |
 | --- | --- |
-| `TOKEN_LIST` | 嘉立创 `X-JLC-AccessToken`，多个 token 用英文逗号分隔 |
-| `SEND_KEY_LIST` | Server 酱 SendKey，多个值用英文逗号分隔，按账号索引匹配 |
+| `ACCOUNTS` | 每个账号的 `token` 与 `customer_code`（客编） |
+| `SEND_KEY` | 可选。一个 Server 酱 SendKey，用于接收所有账号的汇总通知；留空则不推送微信 |
 
-脚本会对每个账号执行以下流程：
+示例：
 
-1. 检测 token 是否有效
-2. 如果 token 有效，执行金豆签到
-3. 查询当前金豆数量
-4. 把 token 状态和签到结果一起推送到 Server 酱
+```python
+ACCOUNTS = [
+    {"token": "token账号1", "customer_code": "客编1"},
+    {"token": "token账号2", "customer_code": "客编2"},
+]
 
----
+# 留空时仅记录签到日志，不推送微信。
+SEND_KEY = "SCTxxxxxxxx"
+```
 
-## 🧩 可选保留配置
+`config.py` 已被 Git 忽略，不会被提交。需要重新创建时，可复制 `config.example.py`。
 
-账号密码驱动模式代码仍然保留，但当前默认不启用。它对应的是：
+## 通过 F12 获取 Token
 
-- 立创开源平台积分签到
-- 登录后再进入金豆中心完成金豆签到
+1. 在 Chrome 登录 [m.jlc.com](https://m.jlc.com)。
+2. 按 `F12` 打开开发者工具，选择 `Network`。
+3. 刷新页面或进入“我的”，选中任意 `m.jlc.com` 接口请求，例如 `selectPersonalAssetsInfo` 或 `signIn`。
+4. 在 `Headers -> Request Headers` 中找到 `X-JLC-AccessToken`。
+5. 仅复制冒号后的值，填入对应账号的 `ACCOUNTS` 项。
 
-相关变量如下：
+Token 不在 Local Storage 时，可以在 Console 输入以下代码，再点击一次页面按钮触发请求。代码会把请求头中的 token 输出并复制到剪贴板；不要刷新页面，否则监听会失效。
 
-| 变量名 | 说明 |
-| --- | --- |
-| `JLC_USERNAME` | 嘉立创登录账号，多个账号用英文逗号分隔 |
-| `JLC_PASSWORD` | 嘉立创登录密码，多个密码用英文逗号分隔，顺序要和账号一致 |
-| `ENABLE_BROWSER_LOGIN` | 设为 `true` 时才启用账号密码驱动模式 |
+```js
+const original = XMLHttpRequest.prototype.setRequestHeader;
+XMLHttpRequest.prototype.setRequestHeader = function (name, value) {
+  if (name.toLowerCase() === "x-jlc-accesstoken") {
+    console.log(value);
+    copy(value);
+  }
+  return original.apply(this, arguments);
+};
+```
 
-如果同时提供了账号密码和 `TOKEN_LIST`，而 `ENABLE_BROWSER_LOGIN` 没有设为 `true`，脚本会忽略账号密码，直接使用 `TOKEN_LIST` 执行金豆签到，也不会在通知里汇报账号密码模式状态。
+## 本地运行
 
----
+```powershell
+uv venv --python 3.13 .venv
+uv pip install --python .venv/Scripts/python.exe -r requirements.txt
+.\.venv\Scripts\python.exe main.py
+```
 
-## ⚙️ GitHub Actions Secrets
+## 三种自动运行方式
 
-进入你自己的仓库：
+三种方式都在每天北京时间 `00:01` 开始，并随机延后不超过 59 分钟。三者互为备选，**只能启用一种**；启用新的方式前，请停用另外两种，避免重复签到。
 
-`Settings -> Secrets and variables -> Actions`
+### GitHub Actions
 
-推荐至少配置下面两个 Secret：
+在线运行时，在 `Settings -> Secrets and variables -> Actions` 配置 `TOKEN_LIST`、`CUSTOMER_CODE_LIST`（均用英文逗号分隔）和可选的 `SEND_KEY`。工作流会临时生成 `config.py`，然后随机等待并执行。日志可直接在 Actions 的运行记录中查看。
 
-| 名称 | 示例 |
-| --- | --- |
-| `TOKEN_LIST` | `token1,token2` |
-| `SEND_KEY_LIST` | `SCTxxxx,SCTyyyy` |
+### Windows 任务计划
 
-可选保留 Secret：
+先完成本地 `uv` 环境与 `config.py` 配置，再在 PowerShell 运行：
 
-| 名称 | 说明 |
-| --- | --- |
-| `JLC_USERNAME` | 账号密码登录模式使用 |
-| `JLC_PASSWORD` | 账号密码登录模式使用 |
-| `ENABLE_BROWSER_LOGIN` | 设为 `true` 才启用账号密码模式 |
+```powershell
+.\install_windows_task.ps1
+```
 
-注意：
+任务名为 `JLC Auto Sign`，运行日志写入根目录的 `autosign.log`。
 
-- 多个账号之间都使用英文逗号 `,` 分隔。
-- `TOKEN_LIST` 与 `SEND_KEY_LIST` 最好按同样顺序一一对应。
-- 如果某个账号没有对应的 `SendKey`，脚本仍会执行签到，但不会推送它的通知。
+卸载 Windows 任务：
 
----
+```powershell
+.\uninstall_windows_task.ps1
+```
 
-## 💻 本地运行
+### Linux 服务器
 
-### 1. 安装依赖
+将项目复制到服务器后，在项目目录创建 Linux 的 `uv` 环境和 `config.py`，再运行：
 
 ```bash
 uv venv --python 3.13 .venv
-uv pip install --python .venv/Scripts/python.exe -r requirements.txt
+uv pip install --python .venv/bin/python -r requirements.txt
+bash install_linux_timer.sh
 ```
 
-### 2. 配置环境变量
-
-默认 token 模式：
+定时器日志通过以下命令查看：
 
 ```bash
-TOKEN_LIST=token1,token2
-SEND_KEY_LIST=SCTxxxx,SCTyyyy
-python main.py
+journalctl -u jlc-autosign.service
 ```
 
-### 快速获取 Token
-
-在本地运行下面的命令：
+卸载 Linux 定时器：
 
 ```bash
-python get_token.py
+bash uninstall_linux_timer.sh
 ```
-
-脚本会打开一个没有历史记录和登录状态的 Chrome 浏览器。登录 `m.jlc.com` 后，回到终端按回车，脚本会输出可直接填入 GitHub Secret 的 `TOKEN_LIST=...`。浏览器关闭后，临时浏览器数据会一并删除。
-
-如果你以后想重新启用账号密码驱动模式：
-
-```bash
-JLC_USERNAME=user1@example.com,user2@example.com
-JLC_PASSWORD=password1,password2
-ENABLE_BROWSER_LOGIN=true
-SEND_KEY_LIST=SCTxxxx,SCTyyyy
-python main.py
-```
-
----
-
-## 🤖 GitHub Actions
-
-仓库已经自带 workflow，会自动：
-
-1. 安装 Python 3.12
-2. 安装 `requests` 和 `selenium`
-3. 读取仓库 Secrets
-4. 执行 `python main.py`
-
-默认定时为每天执行 1 次，时间是北京时间 07:00。你也可以按自己的需要修改 [.github/workflows/python-publish.yml](/D:/Code/PycharmProjects/AutoSign/LC-AutoSign/.github/workflows/python-publish.yml)。
-
----
-
-## 📬 通知说明
-
-每个账号的通知会包含：
-
-- Token 状态检测结果
-- 金豆签到结果
-- 是否完成签到、获得多少金豆、当前有多少金豆
-- 如果最终失败，会显示已重试 3 次仍失败
-
-如果多个账号使用同一个 `SendKey`，脚本会自动合并成一条汇总消息。

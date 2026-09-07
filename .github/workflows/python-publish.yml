@@ -2,7 +2,7 @@ name: JLC Auto Sign
 
 on:
   schedule:
-    - cron: '0 23 * * *'  # 每天执行 1 次，北京时间 07:00
+    - cron: '1 16 * * *'  # 北京时间 00:01 启动
 
   workflow_dispatch:
 
@@ -18,18 +18,33 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+
       - name: Install dependencies
+        run: uv pip install --system -r requirements.txt
+
+      - name: Create config
+        env:
+          TOKEN_LIST: ${{ secrets.TOKEN_LIST }}
+          CUSTOMER_CODE_LIST: ${{ secrets.CUSTOMER_CODE_LIST }}
+          SEND_KEY: ${{ secrets.SEND_KEY }}
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+          cat > config.py <<EOF
+          tokens = """$TOKEN_LIST""".split(",")
+          customer_codes = """$CUSTOMER_CODE_LIST""".split(",")
+          ACCOUNTS = [{"token": token, "customer_code": customer_codes[index]} for index, token in enumerate(tokens)]
+          SEND_KEY = """$SEND_KEY"""
+          EOF
+
+      - name: Wait for a random sign-in time
+        run: |
+          delay=$((RANDOM % 3540))
+          echo "Waiting $delay seconds before signing in"
+          sleep "$delay"
 
       - name: Run Sign Script
         env:
-          TOKEN_LIST: ${{ secrets.TOKEN_LIST }}
-          SEND_KEY_LIST: ${{ secrets.SEND_KEY_LIST }}
-          JLC_USERNAME: ${{ secrets.JLC_USERNAME }}
-          JLC_PASSWORD: ${{ secrets.JLC_PASSWORD }}
-          ENABLE_BROWSER_LOGIN: 'false'
           PYTHONUTF8: '1'
           PYTHONUNBUFFERED: '1'
         run: |
