@@ -88,7 +88,8 @@
 ### 1. 安装依赖
 
 ```bash
-pip install -r requirements.txt
+uv venv --python 3.13 .venv
+uv pip install --python .venv/Scripts/python.exe -r requirements.txt
 ```
 
 ### 2. 配置环境变量
