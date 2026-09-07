@@ -101,6 +101,16 @@ SEND_KEY_LIST=SCTxxxx,SCTyyyy
 python main.py
 ```
 
+### 快速获取 Token
+
+在本地运行下面的命令：
+
+```bash
+python get_token.py
+```
+
+脚本会打开一个没有历史记录和登录状态的 Chrome 浏览器。登录 `m.jlc.com` 后，回到终端按回车，脚本会输出可直接填入 GitHub Secret 的 `TOKEN_LIST=...`。浏览器关闭后，临时浏览器数据会一并删除。
+
 如果你以后想重新启用账号密码驱动模式：
 
 ```bash
